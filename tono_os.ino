@@ -161,6 +161,29 @@ void loadAlbum(){
   Serial.println(" fully loaded.");
 }
 
+void playFileMP3(const char *filename){
+  
+}
+
+void playFileFLAC(const char *filename){
+  
+}
+
+void controls() {
+  
+}
+
+void nextTrack(){
+  
+}
+
+void prevTrack(){
+  
+}
+
+void pauseTrack(){
+  
+}
 
 void loop() {
   // put your main code here, to run repeatedly:
