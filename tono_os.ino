@@ -1,3 +1,6 @@
+// This version of the os uses the cartridge itself to act
+// as a power switch of sorts.  It simply closes the circuit.
+
 #include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -17,7 +20,6 @@
 #define SDCARD_MOSI_PIN 7
 #define SDCARD_SCK_PIN 14
 
-#define SLOT_NOTICE 24 // card pin 9
 #define SLOT0 25 // card pin 1
 #define SLOT1 39 // card pin 2
 #define SLOT2 38 // card pin 3
@@ -44,20 +46,20 @@ boolean trackChange;
 boolean paused;
 boolean slotEmpty;
 
-AudioPlaySdMp3    playMp3;
-AudioPlaySdFlac   playFlac;
+AudioPlaySdMp3    sourceMP3;
+AudioPlaySdFlac   sourceFLAC;
 AudioOutputI2S    audioOutput;
 
 AudioMixer4       mixLeft;
 AudioMixer4       mixRight;
 
 // mp3 Connection
-AudioConnection   patch1(playMp3, 0, mixLeft, 0);
-AudioConnection   patch2(playMp3, 1, mixRight, 0);
+AudioConnection   patch1(sourceMP3, 0, mixLeft, 0);
+AudioConnection   patch2(sourceMP3, 1, mixRight, 0);
 
 // flac Connection
-AudioConnection   patch3(playFlac, 0, mixLeft, 1);
-AudioConnection   patch4(playFlac, 1, mixRight, 1);
+AudioConnection   patch3(sourceFLAC, 0, mixLeft, 1);
+AudioConnection   patch4(sourceFLAC, 1, mixRight, 1);
 
 // AudioBoard
 AudioConnection   patch5(mixLeft, 0, audioOutput, 0);
@@ -80,7 +82,6 @@ void setup() {
   pinMode(BUTTON_BCK, INPUT_PULLUP);
 
   // Setup slot loader pins and state
-  pinMode(SLOT_NOTICE, INPUT);
   pinMode(SLOT0, INPUT);
   pinMode(SLOT1, INPUT);
   pinMode(SLOT2, INPUT);
@@ -105,15 +106,12 @@ void setup() {
     }
   }
   track = 0;
+
+  loadCartridge();
 }
 
 // Loops until cartridge is inserted
 void loadCartridge(){
-  while(slotEmpty){
-    slotEmpty = digitalRead(SLOT_NOTICE);
-  }
-  Serial.println("Cartridge Get!");
-  
   album = 0;
   for(int n = 0; n < 8; n++){
     album = album | (digitalRead(slotPins[n]) << n);
@@ -152,6 +150,7 @@ void loadAlbum(){
       tracknum++;
     }
     files.close();
+    
   }
 
   tracklist[track].toCharArray(playthis, sizeof(tracklist[track]));
@@ -159,37 +158,107 @@ void loadAlbum(){
   Serial.print("Album number ");
   Serial.print(album);
   Serial.println(" fully loaded.");
+  Serial.println("Setup Complete!");
 }
 
 void playFileMP3(const char *filename){
+  trackChange = true;
+  sourceMP3.play(filename);
   
+  Serial.print("Playing: [");
+  Serial.print(track);
+  Serial.print("] ");
+  Serial.println(filename);
+
+  while(sourceMP3.isPlaying()) {
+    controls();
+  }
 }
 
 void playFileFLAC(const char *filename){
+  trackChange = true;
+  sourceFLAC.play(filename);
   
+  Serial.print("Playing: [");
+  Serial.print(track);
+  Serial.print("] ");
+  Serial.println(filename);
+
+  while(sourceFLAC.isPlaying()) {
+    controls();
+  }
 }
 
 void controls() {
-  
+  bouncer_fwd.update();
+  bouncer_pau.update();
+  bouncer_bck.update();
+
+  if(bouncer_fwd.fallingEdge()){
+    changeTrack(false);
+  }
+  if(bouncer_pau.fallingEdge()){
+    pauseTrack();
+  }
+  if(bouncer_bck.fallingEdge()){
+    changeTrack(true);
+  }
 }
 
-void nextTrack(){
+void changeTrack(boolean prev){
   
-}
-
-void prevTrack(){
+  trackChange = false;  // Turning off auto change to prevent double skips.
+  sourceMP3.stop();
+  sourceFLAC.stop();
   
+  if(prev){ // Change to previous track
+    
+    Serial.println("Previous track...");
+    track--;
+    if(track < 0){
+      track = tracknum-1;
+    }
+    
+  } else {  // Change to next track
+    
+    Serial.println("Next track...");
+    track++;
+    if(track >= tracknum){
+      track = 0;
+    }
+  
+  }
 }
 
 void pauseTrack(){
-  
+  if(paused){
+    Serial.println("Resuming Playback...");
+  } else {
+    Serial.println("Pausing Playback...");
+  }
+  paused = sourceMP3.pause(!paused);
+  //might need sourceFLAC to pause too.
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  if(slotEmpty){
-    loadCartridge();
-  } else {
-    
+  Serial.println();
+  Serial.print("Album Number: ");
+  Serial.println(album);
+  Serial.print("Track ");
+  Serial.print(track);
+  Serial.print(" / ");
+  Serial.print(tracknum);
+
+  if(trackext[track] == 1){
+    Serial.println("MP3");
+    playFileMP3(playthis);
+  } else if(trackext[track] == 2){
+    Serial.println("FLAC");
+    playFileFLAC(playthis);
   }
+
+  if(trackChange){ // Track has finished from previous code block
+    changeTrack(false);
+  }
+  delay(100);
 }
