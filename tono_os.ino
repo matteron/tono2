@@ -12,14 +12,21 @@
 #include <play_sd_flac.h> // flac decoder
 #include <play_sd_mp3.h> // mp3 decoder
 
+// Button Pins
 #define BUTTON_FWD 30 // Next Track
 #define BUTTON_PAU 31 // Play Pause
 #define BUTTON_BCK 32 // Prev Track
 
+Bounce bouncer_fwd = Bounce(BUTTON_FWD, 50);
+Bounce bouncer_pau = Bounce(BUTTON_PAU, 50);
+Bounce bouncer_bck = Bounce(BUTTON_BCK, 50);
+
+// SD Card Pins Definition
 #define SDCARD_CS_PIN 10
 #define SDCARD_MOSI_PIN 7
 #define SDCARD_SCK_PIN 14
 
+// Cartridge Slot Pins
 #define SLOT0 25 // card pin 1
 #define SLOT1 39 // card pin 2
 #define SLOT2 38 // card pin 3
@@ -29,22 +36,21 @@
 #define SLOT6 34 // card pin 7
 #define SLOT7 33 // card pin 8
 
-Bounce bouncer_fwd = Bounce(BUTTON_FWD, 50);
-Bounce bouncer_pau = Bounce(BUTTON_PAU, 50);
-Bounce bouncer_bck = Bounce(BUTTON_BCK, 50);
+#define PARITY 15 // Number of validations to perform on slot.
 
-const int chipSelect = 10; //if using another pin for SD card CS.
 int slotPins[8] = {SLOT0, SLOT1, SLOT2, SLOT3, SLOT4, SLOT5, SLOT6, SLOT7};
+
 int album;
 int track;
 int tracknum;
-int trackext[255]; // 0 = nothing, 1 = mp3, 2 = flac
+
+bool trackext[255]; // false = mp3, true = flac
 String tracklist[255];
-File root;
 char playthis[15];
+File root;
+
 boolean trackChange;
 boolean paused;
-boolean slotEmpty;
 
 AudioPlaySdMp3    sourceMP3;
 AudioPlaySdFlac   sourceFLAC;
@@ -82,15 +88,9 @@ void setup() {
   pinMode(BUTTON_BCK, INPUT_PULLUP);
 
   // Setup slot loader pins and state
-  pinMode(SLOT0, INPUT);
-  pinMode(SLOT1, INPUT);
-  pinMode(SLOT2, INPUT);
-  pinMode(SLOT3, INPUT);
-  pinMode(SLOT4, INPUT);
-  pinMode(SLOT5, INPUT);
-  pinMode(SLOT6, INPUT);
-  pinMode(SLOT7, INPUT);
-  slotEmpty = true;
+  for(int n = 0; n < 8; n++){
+    pinMode(slotPins[n], INPUT);
+  }
   
   // Audio Connection Memory and Gain
   // Mp3 file might clip with full gain
@@ -105,17 +105,14 @@ void setup() {
       delay(500);
     }
   }
+  
   track = 0;
-
   loadCartridge();
 }
 
-// Loops until cartridge is inserted
 void loadCartridge(){
-  album = 0;
-  for(int n = 0; n < 8; n++){
-    album = album | (digitalRead(slotPins[n]) << n);
-  }
+  album = validateCartridge();
+  
   Serial.print("Cartridge number ");
   Serial.print(album);
   Serial.println(" loaded.");
@@ -123,6 +120,38 @@ void loadCartridge(){
   loadAlbum();
 }
 
+// Loops through and keeps trying to read cartridge until all checks
+//  are satisfied.
+int validateCartridge() {
+  bool albumInvalid = true;
+  int validators[PARITY];
+  int v0;
+  
+  while(albumInvalid){
+    for(int n = 0; n < PARITY; n++){
+      validators[n] = readCartridge();
+    }
+    v0 = validators[0];
+    for(int n = 1; n < PARITY; n++){
+      albumInvalid = !(v0 == validators[n]);
+      if(albumInvalid){
+        break;
+      }
+    }
+  }
+  return v0;
+}
+
+// Simple reads all the pins and returns the result.
+int readCartridge() {
+  int i = 0;
+  for(int n = 0; n < 8; n++){
+    i = i | (digitalRead(slotPins[n]) << n);
+  }
+  return i;
+}
+
+// Loads the album and prepares the track extension array.
 void loadAlbum(){
   root = SD.open("/" + album);
 
@@ -140,8 +169,8 @@ void loadAlbum(){
 
     if(m > 0 || f > 0){
       tracklist[tracknum] = files.name();
-      if(m > 0) trackext[tracknum] = 1;
-      if(f > 0) trackext[tracknum] = 2;
+      if(m > 0) trackext[tracknum] = false;
+      if(f > 0) trackext[tracknum] = true;
 
       Serial.print(trackext[tracknum]);
       Serial.print(" - ");
@@ -161,34 +190,30 @@ void loadAlbum(){
   Serial.println("Setup Complete!");
 }
 
-void playFileMP3(const char *filename){
+// Plays the file supplied through either the FLAC or MP3 channel
+//  depending on the first boolean.
+void play(bool FLAC, const char *filename){
   trackChange = true;
-  sourceMP3.play(filename);
-  
+
   Serial.print("Playing: [");
   Serial.print(track);
   Serial.print("] ");
   Serial.println(filename);
 
-  while(sourceMP3.isPlaying()) {
+  if(FLAC){
+    sourceFLAC.play(filename);
+    while(sourceFLAC.isPlaying()) {
+      controls();
+    }
+  } else { // MP3
+    sourceMP3.play(filename);
+    while(sourceMP3.isPlaying()) {
     controls();
+    }
   }
 }
 
-void playFileFLAC(const char *filename){
-  trackChange = true;
-  sourceFLAC.play(filename);
-  
-  Serial.print("Playing: [");
-  Serial.print(track);
-  Serial.print("] ");
-  Serial.println(filename);
-
-  while(sourceFLAC.isPlaying()) {
-    controls();
-  }
-}
-
+// Checks the buttons for activity and acts upon it.
 void controls() {
   bouncer_fwd.update();
   bouncer_pau.update();
@@ -205,6 +230,8 @@ void controls() {
   }
 }
 
+// Changes the track.  Next track is default behavior.
+//  If prev is true, it goes to previous track.
 void changeTrack(boolean prev){
   
   trackChange = false;  // Turning off auto change to prevent double skips.
@@ -230,6 +257,7 @@ void changeTrack(boolean prev){
   }
 }
 
+// Pause/Play Function
 void pauseTrack(){
   if(paused){
     Serial.println("Resuming Playback...");
@@ -249,12 +277,12 @@ void loop() {
   Serial.print(" / ");
   Serial.print(tracknum);
 
-  if(trackext[track] == 1){
-    Serial.println("MP3");
-    playFileMP3(playthis);
-  } else if(trackext[track] == 2){
-    Serial.println("FLAC");
-    playFileFLAC(playthis);
+  play(trackext[track], playthis);
+
+  if(trackext[track]){
+    Serial.println(" MP3");
+  } else {
+    Serial.println(" FLAC");
   }
 
   if(trackChange){ // Track has finished from previous code block
