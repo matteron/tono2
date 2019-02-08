@@ -157,7 +157,7 @@ int readCartridge() {
 
 // Loads the album and prepares the track extension array.
 void loadAlbum(){
-  root = SD.open("/144");
+  root = SD.open("/" + album);
 
   while(true) {
 
@@ -196,8 +196,7 @@ void loadAlbum(){
 }
 
 // Plays the file supplied through either the FLAC or MP3 channel
-//  depending on the first boolean.
-void play(bool FLAC, const char *filename){
+void play(const char *filename){
   trackChange = true;
 
   Serial.print("Playing: [");
@@ -205,7 +204,7 @@ void play(bool FLAC, const char *filename){
   Serial.print("] ");
   Serial.println(filename);
 
-  if(FLAC){
+  if(trackext[track]){
     sourceFLAC.play(filename);
     while(sourceFLAC.isPlaying()) {
       controls();
@@ -289,7 +288,7 @@ void loop() {
   Serial.print(" / ");
   Serial.println(tracknum);
 
-  play(trackext[track], playthis);
+  play(playthis);
 
   if(trackChange){ // Track has finished from previous code block
     changeTrack(false);
