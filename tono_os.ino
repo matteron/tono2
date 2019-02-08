@@ -27,22 +27,26 @@ Bounce bouncer_bck = Bounce(BUTTON_BCK, 50);
 #define SDCARD_SCK_PIN 14
 
 // Cartridge Slot Pins
-#define SLOT0 25 // card pin 1
-#define SLOT1 39 // card pin 2
-#define SLOT2 38 // card pin 3
-#define SLOT3 37 // card pin 4
-#define SLOT4 36 // card pin 5
-#define SLOT5 35 // card pin 6
-#define SLOT6 34 // card pin 7
-#define SLOT7 33 // card pin 8
+
+#define SLOT0 33 // card pin 1
+#define SLOT1 34 // card pin 2
+#define SLOT2 35 // card pin 3
+#define SLOT3 36 // card pin 4
+#define SLOT4 37 // card pin 5
+#define SLOT5 38 // card pin 6
+#define SLOT6 39 // card pin 7
+#define SLOT7 25 // card pin 8
+#define SLOT8 24 // card pin 9
 
 #define PARITY 15 // Number of validations to perform on slot.
 
-int slotPins[8] = {SLOT0, SLOT1, SLOT2, SLOT3, SLOT4, SLOT5, SLOT6, SLOT7};
+int slotPins[] = {SLOT0, SLOT1, SLOT2, SLOT3, SLOT4, SLOT5, SLOT6, SLOT7, SLOT8};
+int pinAmount = sizeof(slotPins)/sizeof(int);
 
 int album;
 int track;
 int tracknum;
+String filepath;
 
 bool trackext[255]; // false = mp3, true = flac
 String tracklist[255];
@@ -88,8 +92,8 @@ void setup() {
   pinMode(BUTTON_BCK, INPUT_PULLUP);
 
   // Setup slot loader pins and state
-  for(int n = 0; n < 8; n++){
-    pinMode(slotPins[n], INPUT);
+  for(int n = 0; n < pinAmount; n++){
+    pinMode(slotPins[n], INPUT_PULLDOWN);
   }
   
   // Audio Connection Memory and Gain
@@ -145,7 +149,7 @@ int validateCartridge() {
 // Simple reads all the pins and returns the result.
 int readCartridge() {
   int i = 0;
-  for(int n = 0; n < 8; n++){
+  for(int n = 0; n < pinAmount; n++){
     i = i | (digitalRead(slotPins[n]) << n);
   }
   return i;
@@ -153,9 +157,10 @@ int readCartridge() {
 
 // Loads the album and prepares the track extension array.
 void loadAlbum(){
-  root = SD.open("/" + album);
+  root = SD.open("/144");
 
   while(true) {
+
     File files = root.openNextFile();
     if(!files) {
       // Loaded all files
@@ -165,7 +170,7 @@ void loadAlbum(){
     String curfile = files.name();
     // Check if file is MP3 or FLAC
     int m = curfile.lastIndexOf(".MP3");
-    int f = curfile.lastIndexOf(".FLAC");
+    int f = curfile.lastIndexOf(".FLA");
 
     if(m > 0 || f > 0){
       tracklist[tracknum] = files.name();
@@ -181,8 +186,8 @@ void loadAlbum(){
     files.close();
     
   }
-
-  tracklist[track].toCharArray(playthis, sizeof(tracklist[track]));
+  filepath = String(album)+ "/" + tracklist[track];
+  filepath.toCharArray(playthis, sizeof(tracklist[track]));
 
   Serial.print("Album number ");
   Serial.print(album);
@@ -208,7 +213,7 @@ void play(bool FLAC, const char *filename){
   } else { // MP3
     sourceMP3.play(filename);
     while(sourceMP3.isPlaying()) {
-    controls();
+      controls();
     }
   }
 }
@@ -255,6 +260,8 @@ void changeTrack(boolean prev){
     }
   
   }
+  filepath = String(album)+ "/" + tracklist[track];
+  filepath.toCharArray(playthis, sizeof(tracklist[track]));
 }
 
 // Pause/Play Function
@@ -264,7 +271,12 @@ void pauseTrack(){
   } else {
     Serial.println("Pausing Playback...");
   }
-  paused = sourceMP3.pause(!paused);
+  if(trackext[track]){
+    paused = sourceFLAC.pause(!paused);
+  } else {
+    paused = sourceMP3.pause(!paused);
+  }
+  
   //might need sourceFLAC to pause too.
 }
 
@@ -275,15 +287,9 @@ void loop() {
   Serial.print("Track ");
   Serial.print(track);
   Serial.print(" / ");
-  Serial.print(tracknum);
+  Serial.println(tracknum);
 
   play(trackext[track], playthis);
-
-  if(trackext[track]){
-    Serial.println(" MP3");
-  } else {
-    Serial.println(" FLAC");
-  }
 
   if(trackChange){ // Track has finished from previous code block
     changeTrack(false);
