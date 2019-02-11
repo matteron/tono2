@@ -46,6 +46,8 @@ int pinAmount = sizeof(slotPins)/sizeof(int);
 int album;
 int track;
 int tracknum;
+String rootpath;
+char rootcharpath[15];
 String filepath;
 
 bool trackext[255]; // false = mp3, true = flac
@@ -157,7 +159,9 @@ int readCartridge() {
 
 // Loads the album and prepares the track extension array.
 void loadAlbum(){
-  root = SD.open("/" + album);
+  rootpath = "/" + String(album);
+  rootpath.toCharArray(rootcharpath, sizeof(rootpath));
+  root = SD.open(rootcharpath);
 
   while(true) {
 
